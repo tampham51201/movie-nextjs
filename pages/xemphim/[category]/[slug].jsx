@@ -1,0 +1,360 @@
+import React, { useEffect, useState } from "react";
+
+import { ReactHlsPlayer } from "react-hls-player";
+
+import { Modal } from "antd";
+
+import SectionCategory from "../../../components/Home/SectionCategory";
+
+import { useSelector, useDispatch } from "react-redux";
+import { addItems } from "../../../redux/history/historyTimeCurrentSlice";
+import { Player } from "react-tuby";
+import "react-tuby/css/main.css";
+
+import movieApi from "../../../api/movieApi";
+import Head from "next/head";
+import Image from "next/image";
+
+import { useRouter } from "next/dist/client/router";
+var moment = require("moment");
+
+export async function getServerSideProps({ params }) {
+  const { category, slug } = params;
+
+  //all info movie
+  const resDetails = await movieApi.getDetails(category, slug);
+  const dataDeatails = resDetails.data.data;
+
+  return {
+    props: {
+      dataDeatails: dataDeatails,
+    },
+  };
+}
+
+const XemPhim = ({ dataDeatails }) => {
+  const historyTimeCurrent = useSelector(
+    (state) => state.historyTimeCurrent.value
+  );
+
+  const [episode, setEpisode] = useState(0);
+
+  const [timeCurrent, setTimeCurrent] = useState(0);
+  const [timeHistoryCurrent, setTimeHistoryCurrent] = useState(0);
+  const [defaultEpisode, setDefaultEpisode] = useState(0);
+
+  const [isTimeCurrent, setIsTimeCurrent] = useState(false);
+  const [isPlay, setIsPlay] = useState(false);
+
+  const [isload, setIsload] = useState(false);
+  const [isModal, setIsModal] = useState(false);
+
+  const [sub, setSub] = useState([]);
+  const [movie, setMovie] = useState([]);
+  const router = useRouter();
+  const { category, slug } = router.query;
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    if (timeCurrent !== 0) {
+      const data = {
+        idMovie: slug,
+        idCategory: category,
+        episode: episode,
+        timeCurrent: timeCurrent,
+      };
+      dispatch(addItems(data));
+    }
+  }, [timeCurrent]);
+
+  useEffect(() => {
+    setEpisode(0);
+    setIsload(false);
+    setIsModal(false);
+    setIsTimeCurrent(false);
+    setTimeHistoryCurrent(0);
+    setTimeCurrent(0);
+  }, [category, slug]);
+
+  useEffect(() => {
+    const getDetails = async () => {
+      if (dataDeatails.episodeVo[episode] !== undefined) {
+        //get id va sub
+        var episodeId = dataDeatails.episodeVo[episode].id;
+
+        var newSubs = dataDeatails.episodeVo[episode].subtitlingList;
+
+        var newSubList = [];
+        var subListVi = [];
+
+        newSubs.forEach((item) => {
+          if (item.languageAbbr == "vi") {
+            subListVi.push({
+              lang: item.languageAbbr,
+              language: item.language,
+              url: `https://srt-to-vtt.vercel.app/?url=${item.subtitlingUrl}`,
+            });
+          } else {
+            newSubList.push({
+              lang: item.languageAbbr,
+              language: item.language,
+              url: `https://srt-to-vtt.vercel.app/?url=${item.subtitlingUrl}`,
+            });
+          }
+        });
+        const subList = [...subListVi, ...newSubList];
+        setSub(subList);
+
+        //get media movie
+        var definition =
+          dataDeatails.episodeVo[episode].definitionList.length > 0
+            ? dataDeatails.episodeVo[episode].definitionList[0].code
+            : "";
+
+        const getMovie = async () => {
+          do {
+            var res = await movieApi.getMovieDetail(
+              category,
+              slug,
+              episodeId,
+              definition
+            );
+          } while (
+            !res.data.data.mediaUrl.includes("http://akm-cdn-play.loklok.tv")
+          );
+
+          setMovie(res.data.data);
+          return () => {
+            !res.data.data.mediaUrl.includes("http://akm-cdn-play.loklok.tv");
+          };
+        };
+        getMovie();
+      }
+    };
+    getDetails();
+  }, [episode, dataDeatails]);
+
+  useEffect(() => {
+    {
+      const newhistoryTimeCurrent = historyTimeCurrent.filter(
+        (item) => item.idMovie === slug && item.idCategory === category
+      );
+      if (newhistoryTimeCurrent.length > 0) {
+        setTimeHistoryCurrent(newhistoryTimeCurrent[0].timeCurrent);
+        // setDefaultEpisode(newhistoryTimeCurrent[0].episode);
+        setEpisode(newhistoryTimeCurrent[0].episode);
+
+        if (isload) {
+          setIsModal(true);
+        }
+      }
+    }
+  }, [isload, category, slug]);
+
+  const handleClickEpisode = (item) => {
+    setEpisode(item.seriesNo - 1);
+    setIsload(true);
+  };
+
+  const handlePlay = () => {
+    setIsload(true);
+  };
+
+  const handleCancel = () => {
+    setIsModal(false);
+    setEpisode(0);
+    setIsPlay(true);
+  };
+
+  const handleOk = () => {
+    setIsTimeCurrent(true);
+    // setEpisode(defaultEpisode);
+    setIsModal(false);
+    setIsPlay(true);
+  };
+
+  return (
+    <>
+      <Head>
+        <title> Xem Phim {dataDeatails.name} </title>
+        <meta name="description" content="Generated by create next app" />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="stylesheet" href="" />
+      </Head>
+      <div className="bg-black">
+        <div className="pt-[5rem] mx-auto max-w-[1200px] px-[15px] bg-black">
+          {isload && (
+            <div className=" mb-4 border-primary border-[.05rem] relative">
+              <Player
+                src={movie !== null ? movie.mediaUrl : ""}
+                subtitles={sub}
+                poster={dataDeatails.coverHorizontalUrl}
+              >
+                {(ref, props) => {
+                  if (ref.current) {
+                    setTimeCurrent(ref.current.currentTime);
+                  }
+                  if (ref.current && isTimeCurrent) {
+                    console.log(ref);
+                    ref.current.currentTime = timeHistoryCurrent;
+                    ref.current.autoplay = true;
+
+                    setIsTimeCurrent(false);
+                  }
+
+                  return (
+                    <ReactHlsPlayer
+                      playerRef={ref}
+                      {...props}
+                      crossOrigin=""
+                      // autoPlay={isPlay}
+                    />
+                  );
+                }}
+              </Player>
+              <div className="absolute top-1 right-1">
+                {dataDeatails.category !== 0
+                  ? ` ${dataDeatails.name} - Tập ${episode + 1}`
+                  : ""}
+              </div>
+            </div>
+          )}
+
+          <div className="flex-2 grid grid-cols-3 gap-[30px]">
+            <div className="">
+              <Image
+                src={dataDeatails.coverVerticalUrl}
+                width="1333"
+                height="1866"
+                className="rounded-sm"
+              ></Image>
+            </div>
+
+            <div className="col-span-2 py-3 pr-3">
+              <div className="cursor-pointer text-xs">
+                <span className="mr-2 text-primary">
+                  <i class="bx bxs-crown mr-1"></i>MIỄN PHÍ.
+                </span>
+                <span className="mr-2 hover:text-primary">
+                  {dataDeatails.drameTypeVo.drameType === "MOVIE"
+                    ? "Phim lẻ"
+                    : "Phim bộ"}
+                  .
+                </span>
+                <span className="hover:text-primary">{dataDeatails.year}.</span>
+              </div>
+              <h2 className="text-secondary text-3xl mt-2">
+                {dataDeatails.name}
+              </h2>
+              <h3 className="text-white text-base">
+                {dataDeatails.aliasName} ({dataDeatails.year})
+              </h3>
+              <button
+                className="border-[.1rem] border-primary px-4 py-1 flex justify-center items-center mt-3 rounded-md font-bold text-base text-primary hover:text-white "
+                onClick={handlePlay}
+              >
+                <i className="bx bx-play text-3xl mr-2 -ml-2"></i>PLAY
+              </button>
+              <p className="my-3 capitalize text-justify">
+                {dataDeatails.introduction}
+              </p>
+              <p className="text-[#7c8488] mb-1">
+                Số Tập:
+                <span className="text-white  ml-2">
+                  {dataDeatails.episodeCount !== null
+                    ? `${dataDeatails.episodeVo.length} / ${dataDeatails.episodeCount}`
+                    : 1}
+                </span>
+              </p>
+
+              <p className="text-[#7c8488] mb-1">
+                Thời lượng:
+                <span className="text-white ml-2">
+                  {movie !== null ? Math.floor(movie.totalDuration / 60) : 0}{" "}
+                  phút
+                </span>
+              </p>
+
+              <p className="text-[#7c8488] mb-1">
+                Quốc gia:
+                <span className="text-white ml-2">
+                  {dataDeatails.areaNameList.map((item) => `${item}, `)}
+                </span>
+              </p>
+              <p className="text-[#7c8488] mb-1">
+                Thể Loại:
+                <span className="text-white  ml-2">
+                  {dataDeatails.tagNameList.map((item) => `${item}, `)}
+                </span>
+              </p>
+              <p className="text-[#7c8488] mb-1">
+                Đánh giá:
+                <span className="text-white ml-2">
+                  {dataDeatails.score} / 10
+                </span>
+              </p>
+
+              <p className="text-[#7c8488] mb-1">
+                Ngày phát hành:
+                <span className="text-white ml-2">{dataDeatails.year}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-bg_black mt-4">
+          <div className="pt-[2rem] mx-auto max-w-[1200px] px-[15px]">
+            {dataDeatails.category !== 0 && (
+              <>
+                <div className="flex justify-center">
+                  <p className="inline text-center font-medium text-xl px-3 text-primary  border-b-[.1rem] pb-1">
+                    Tập phim
+                  </p>
+                </div>
+                <div className="grid  grid-cols-12 gap-4 py-8 mb-6">
+                  {dataDeatails.episodeVo.map((item, index) => (
+                    <button
+                      className={`border-[.05rem] rounded-sm py-2 hover:border-primary hover:text-primary ${
+                        item.seriesNo - 1 === episode && isload
+                          ? "border-primary"
+                          : ""
+                      } `}
+                      key={index}
+                      onClick={() => handleClickEpisode(item)}
+                    >
+                      Tập {item.seriesNo}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <SectionCategory
+              title="Liên Quan"
+              data={dataDeatails.likeList}
+              className="!grid-cols-5"
+            />
+          </div>
+
+          <Modal
+            title="Thông Báo"
+            visible={isModal}
+            onOk={handleOk}
+            onCancel={handleCancel}
+            okText="XEM TIẾP"
+            cancelText="XEM TỪ ĐẦU"
+          >
+            <p>
+              {`Bạn Có Muốn Xem Tiếp Tập ${
+                episode + 1
+              } Phim Này ở vị trí ${moment
+                .utc(timeHistoryCurrent * 1000)
+                .format("HH:mm:ss")} không ?`}
+            </p>
+          </Modal>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default XemPhim;
